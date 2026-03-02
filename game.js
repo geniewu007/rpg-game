@@ -4,6 +4,12 @@ const config = {
     height: 600,
     parent: 'game-container',
     pixelArt: true,
+    scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+        width: 800,
+        height: 600,
+    },
     physics: {
         default: 'arcade',
         arcade: {
@@ -2112,7 +2118,7 @@ function takeDamage(scene, source, damage = 1) {
 }
 
 function createTouchControls(scene) {
-    if (!scene.sys.game.device.input.touch) return;
+    if (!('ontouchstart' in window) && navigator.maxTouchPoints === 0) return;
 
     const depth = 500;
     const baseAlpha = 0.5;
