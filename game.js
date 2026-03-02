@@ -71,6 +71,12 @@ let invShieldRow = [];
 let invSpearRow = [];
 let invSpearCountText;
 let map13SageGaveGear = false;
+
+// Touch controls state
+let touchLeft = false, touchRight = false, touchUp = false, touchDown = false;
+let touchShield = false, touchSpearJustPressed = false, touchActionJustPressed = false;
+let touchShieldBtn = null, touchShieldBtnTxt = null;
+let touchSpearBtn = null, touchSpearBtnTxt = null;
 let deerGroup;
 let wolfGroup;
 let rabbitGroup;
@@ -313,6 +319,8 @@ function create() {
     musicKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.M);
     shieldKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
     spearKey  = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
+    this.input.addPointer(3); // support multi-touch
+    createTouchControls(this);
 
     // Spear HUD (hidden until obtained)
     spearText = this.add.text(16, 86, 'Spear: 0', {
@@ -810,40 +818,45 @@ function update() {
     // Reset velocity
     player.setVelocity(0);
 
-    // Shield block — slow player while holding D
-    isBlocking = hasShield && shieldKey.isDown;
+    // Shield block — slow player while holding D (or touch shield btn)
+    isBlocking = hasShield && (shieldKey.isDown || touchShield);
     const speed = isBlocking ? PLAYER_SPEED * 0.35 : PLAYER_SPEED;
 
+    // Show/hide touch shield and spear buttons dynamically
+    if (touchShieldBtn) { touchShieldBtn.setVisible(hasShield); touchShieldBtnTxt.setVisible(hasShield); }
+    if (touchSpearBtn)  { touchSpearBtn.setVisible(hasSpear);   touchSpearBtnTxt.setVisible(hasSpear); }
+
     // Horizontal movement
-    if (cursors.left.isDown) {
+    if (cursors.left.isDown || touchLeft) {
         player.setVelocityX(-speed);
         player.setTexture(playerTexturePrefix + '_left');
         playerFacing = 'left';
-    } else if (cursors.right.isDown) {
+    } else if (cursors.right.isDown || touchRight) {
         player.setVelocityX(speed);
         player.setTexture(playerTexturePrefix + '_right');
         playerFacing = 'right';
     }
 
     // Vertical movement
-    if (cursors.up.isDown) {
+    if (cursors.up.isDown || touchUp) {
         player.setVelocityY(-speed);
-        if (!cursors.left.isDown && !cursors.right.isDown) {
+        if (!cursors.left.isDown && !cursors.right.isDown && !touchLeft && !touchRight) {
             player.setTexture(playerTexturePrefix + '_up');
             playerFacing = 'up';
         }
-    } else if (cursors.down.isDown) {
+    } else if (cursors.down.isDown || touchDown) {
         player.setVelocityY(speed);
-        if (!cursors.left.isDown && !cursors.right.isDown) {
+        if (!cursors.left.isDown && !cursors.right.isDown && !touchLeft && !touchRight) {
             player.setTexture(playerTexturePrefix + '_down');
             playerFacing = 'down';
         }
     }
 
-    // Throw spear — S key
-    if (hasSpear && Phaser.Input.Keyboard.JustDown(spearKey)) {
+    // Throw spear — S key or touch
+    if (hasSpear && (Phaser.Input.Keyboard.JustDown(spearKey) || touchSpearJustPressed)) {
         throwSpear(this);
     }
+    touchSpearJustPressed = false;
 
     // Shield visual tint
     if (isBlocking) {
@@ -858,8 +871,9 @@ function update() {
         player.setVelocityY(player.body.velocity.y * 0.707);
     }
 
-    // Handle spacebar actions
-    if (Phaser.Input.Keyboard.JustDown(actionKey)) {
+    // Handle spacebar actions (or touch attack btn)
+    if (Phaser.Input.Keyboard.JustDown(actionKey) || touchActionJustPressed) {
+        touchActionJustPressed = false;
         // Check if dialogue is showing - close it
         if (dialogueBox.visible) {
             hideDialogue();
@@ -2095,6 +2109,60 @@ function takeDamage(scene, source, damage = 1) {
         player.setVelocityX(Math.cos(angle) * 220);
         player.setVelocityY(Math.sin(angle) * 220);
     }
+}
+
+function createTouchControls(scene) {
+    if (!scene.sys.game.device.input.touch) return;
+
+    const depth = 500;
+    const baseAlpha = 0.5;
+    const activeAlpha = 0.85;
+
+    function makeDir(x, y, label, onDown, onUp) {
+        const bg = scene.add.circle(x, y, 26, 0x223344, baseAlpha)
+            .setScrollFactor(0).setDepth(depth).setInteractive();
+        const txt = scene.add.text(x, y, label, { fontSize: '20px', fill: '#ffffff', stroke: '#000', strokeThickness: 2 })
+            .setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1);
+        bg.on('pointerdown',  () => { bg.setFillStyle(0x4477aa, activeAlpha); onDown(); });
+        bg.on('pointerup',    () => { bg.setFillStyle(0x223344, baseAlpha);  onUp();   });
+        bg.on('pointerout',   () => { bg.setFillStyle(0x223344, baseAlpha);  onUp();   });
+        bg.on('pointercancel',() => { bg.setFillStyle(0x223344, baseAlpha);  onUp();   });
+    }
+
+    // D-pad
+    const dx = 90, dy = 510;
+    makeDir(dx,      dy - 52, '▲', () => touchUp    = true, () => touchUp    = false);
+    makeDir(dx,      dy + 52, '▼', () => touchDown  = true, () => touchDown  = false);
+    makeDir(dx - 52, dy,      '◀', () => touchLeft  = true, () => touchLeft  = false);
+    makeDir(dx + 52, dy,      '▶', () => touchRight = true, () => touchRight = false);
+
+    // Attack / Interact button
+    const atkBg = scene.add.circle(700, 535, 32, 0x774411, baseAlpha)
+        .setScrollFactor(0).setDepth(depth).setInteractive();
+    scene.add.text(700, 535, '⚔', { fontSize: '22px' })
+        .setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1);
+    atkBg.on('pointerdown',  () => { atkBg.setFillStyle(0xcc7722, activeAlpha); touchActionJustPressed = true; });
+    atkBg.on('pointerup',    () => atkBg.setFillStyle(0x774411, baseAlpha));
+    atkBg.on('pointerout',   () => atkBg.setFillStyle(0x774411, baseAlpha));
+
+    // Shield button (hidden until player gets shield)
+    touchShieldBtn = scene.add.circle(640, 490, 26, 0x113366, baseAlpha)
+        .setScrollFactor(0).setDepth(depth).setInteractive().setVisible(false);
+    touchShieldBtnTxt = scene.add.text(640, 490, '🛡', { fontSize: '17px' })
+        .setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1).setVisible(false);
+    touchShieldBtn.on('pointerdown',  () => { touchShieldBtn.setFillStyle(0x3366cc, activeAlpha); touchShield = true;  });
+    touchShieldBtn.on('pointerup',    () => { touchShieldBtn.setFillStyle(0x113366, baseAlpha);   touchShield = false; });
+    touchShieldBtn.on('pointerout',   () => { touchShieldBtn.setFillStyle(0x113366, baseAlpha);   touchShield = false; });
+    touchShieldBtn.on('pointercancel',() => { touchShieldBtn.setFillStyle(0x113366, baseAlpha);   touchShield = false; });
+
+    // Spear button (hidden until player gets spear)
+    touchSpearBtn = scene.add.circle(760, 480, 26, 0x115533, baseAlpha)
+        .setScrollFactor(0).setDepth(depth).setInteractive().setVisible(false);
+    touchSpearBtnTxt = scene.add.text(760, 480, '✦', { fontSize: '17px', fill: '#88ffaa' })
+        .setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1).setVisible(false);
+    touchSpearBtn.on('pointerdown', () => { touchSpearBtn.setFillStyle(0x33aa66, activeAlpha); touchSpearJustPressed = true; });
+    touchSpearBtn.on('pointerup',   () => touchSpearBtn.setFillStyle(0x115533, baseAlpha));
+    touchSpearBtn.on('pointerout',  () => touchSpearBtn.setFillStyle(0x115533, baseAlpha));
 }
 
 function showGameOver(scene) {
